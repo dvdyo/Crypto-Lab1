@@ -8,6 +8,7 @@
 
 import math
 import sys
+import csv
 from collections import Counter, defaultdict
 import argparse
 
@@ -118,6 +119,41 @@ class TextEntropyAnalyzer:
         # H₂ - це ентропія на символ, тому ділимо на 2
         return entropy / 2
     
+    def export_bigram_matrix_csv(self, filename, include_spaces=True, overlapping=True):
+        """Експорт матриці біграм у CSV файл з повною точністю"""
+        bigram_frequencies = self.calculate_bigram_frequencies(include_spaces, overlapping)
+        
+        # Отримання всіх унікальних символів
+        if include_spaces:
+            chars = sorted(set('абвгдежзийклмнопрстуфхцчшщьыэюя '))
+        else:
+            chars = sorted(set('абвгдежзийклмнопрстуфхцчшщьыэюя'))
+        
+        try:
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Заголовок: перший стовпець порожній, далі всі символи
+                header = [''] + chars
+                writer.writerow(header)
+                
+                # Кожен рядок: перший символ біграми, далі частоти
+                for char1 in chars:
+                    row = [char1]
+                    for char2 in chars:
+                        bigram = char1 + char2
+                        freq = bigram_frequencies.get(bigram, 0)
+                        row.append(freq)
+                    writer.writerow(row)
+            
+            print(f"\nМатриця біграм успішно експортована в '{filename}'")
+            print(f"Розмір матриці: {len(chars)}x{len(chars)}")
+            print(f"Всього біграм: {len(bigram_frequencies)}")
+            
+        except IOError as e:
+            print(f"Помилка при записі файлу: {e}")
+            sys.exit(1)
+    
     def print_letter_frequencies(self, include_spaces=True):
         """Виведення частот літер, відсортованих за спаданням"""
         frequencies = self.calculate_letter_frequencies(include_spaces)
@@ -188,11 +224,137 @@ class TextEntropyAnalyzer:
         return R
 
 
+class BigramPredictor:
+    """Клас для інтерактивного передбачення наступного символу на основі матриці біграм"""
+    
+    def __init__(self, csv_filename):
+        """Завантаження матриці біграм з CSV файлу"""
+        self.bigram_frequencies = {}
+        self.alphabet = []
+        self.load_from_csv(csv_filename)
+    
+    def load_from_csv(self, filename):
+        """Завантаження матриці біграм з CSV"""
+        try:
+            with open(filename, 'r', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                
+                # Читання заголовка (алфавіт)
+                header = next(reader)
+                self.alphabet = header[1:]  # Пропускаємо перший порожній елемент
+                
+                # Читання рядків матриці
+                for row in reader:
+                    if not row:
+                        continue
+                    
+                    char1 = row[0]
+                    for i, freq_str in enumerate(row[1:]):
+                        if i >= len(self.alphabet):
+                            break
+                        char2 = self.alphabet[i]
+                        try:
+                            freq = float(freq_str)
+                            if freq > 0:
+                                self.bigram_frequencies[(char1, char2)] = freq
+                        except ValueError:
+                            continue
+            
+            print(f"Матриця біграм успішно завантажена з '{filename}'")
+            print(f"Розмір алфавіту: {len(self.alphabet)}")
+            print(f"Завантажено біграм: {len(self.bigram_frequencies)}")
+            
+        except FileNotFoundError:
+            print(f"Помилка: Файл '{filename}' не знайдено")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Помилка при читанні CSV файлу: {e}")
+            sys.exit(1)
+    
+    def predict_next(self, char):
+        """Передбачення наступного символу після заданого"""
+        char = char.lower()
+        
+        # Перевірка, чи символ є в алфавіті
+        if char not in self.alphabet:
+            return []
+        
+        # Знаходження всіх біграм, що починаються з цього символу
+        predictions = []
+        for (c1, c2), freq in self.bigram_frequencies.items():
+            if c1 == char:
+                predictions.append((c2, freq))
+        
+        # Сортування за частотою (за спаданням)
+        predictions.sort(key=lambda x: x[1], reverse=True)
+        
+        return predictions
+    
+    def run_interactive(self):
+        """Запуск інтерактивного режиму передбачення"""
+        print("\n" + "=" * 60)
+        print("ІНТЕРАКТИВНИЙ РЕЖИМ ПЕРЕДБАЧЕННЯ НАСТУПНОГО СИМВОЛУ")
+        print("=" * 60)
+        print("\nВведіть символ, щоб побачити найбільш ймовірні наступні символи")
+        print("Для виходу введіть 'exit' або 'quit'")
+        print("Для виведення алфавіту введіть 'alphabet'")
+        print("-" * 60)
+        
+        while True:
+            try:
+                user_input = input("\nВведіть символ: ").strip()
+                
+                if not user_input:
+                    continue
+                
+                if user_input.lower() in ['exit', 'quit', 'вихід']:
+                    print("До побачення!")
+                    break
+                
+                if user_input.lower() == 'alphabet':
+                    print("\nАлфавіт матриці:")
+                    display_alphabet = [c if c != ' ' else '(пробіл)' for c in self.alphabet]
+                    print(', '.join(display_alphabet))
+                    continue
+                
+                # Беремо тільки перший символ
+                char = user_input[0]
+                
+                predictions = self.predict_next(char)
+                
+                if not predictions:
+                    display_char = char if char != ' ' else '(пробіл)'
+                    print(f"\nСимвол '{display_char}' не знайдено в алфавіті або немає даних про біграми")
+                    continue
+                
+                # Виведення результатів
+                display_char = char if char != ' ' else '(пробіл)'
+                print(f"\n{'='*60}")
+                print(f"Передбачення для символу '{display_char}':")
+                print(f"{'='*60}")
+                print(f"{'Ранг':<6}{'Символ':<15}{'Частота':<18}{'Відсоток':<12}")
+                print("-" * 60)
+                
+                for rank, (next_char, freq) in enumerate(predictions, 1):
+                    display_next = next_char if next_char != ' ' else '(пробіл)'
+                    print(f"{rank:<6}{display_next:<15}{freq:<18.10f}{freq*100:<12.4f}%")
+                
+                print(f"\nВсього варіантів: {len(predictions)}")
+                
+            except KeyboardInterrupt:
+                print("\n\nПерервано користувачем. До побачення!")
+                break
+            except Exception as e:
+                print(f"Помилка: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Аналіз ентропії тексту для криптографічного практикуму'
     )
-    parser.add_argument('filename', help='Шлях до текстового файлу для аналізу')
+    
+    # Основні аргументи
+    parser.add_argument('filename', nargs='?', help='Шлях до текстового файлу для аналізу')
     parser.add_argument('--encoding', default='utf-8', 
                        help='Кодування файлу (за замовчуванням: utf-8)')
     parser.add_argument('--no-spaces', action='store_true',
@@ -200,7 +362,23 @@ def main():
     parser.add_argument('--non-overlapping', action='store_true',
                        help='Використовувати біграми, що не перекриваються')
     
+    # Нові аргументи для експорту та передбачення
+    parser.add_argument('--export-csv', metavar='OUTPUT_FILE',
+                       help='Експортувати матрицю біграм у CSV файл')
+    parser.add_argument('--predict', metavar='CSV_FILE',
+                       help='Запустити інтерактивний режим передбачення з CSV файлу')
+    
     args = parser.parse_args()
+    
+    # Режим передбачення
+    if args.predict:
+        predictor = BigramPredictor(args.predict)
+        predictor.run_interactive()
+        return
+    
+    # Звичайний режим аналізу
+    if not args.filename:
+        parser.error("Необхідно вказати файл для аналізу або використати --predict")
     
     # Читання файлу
     try:
@@ -224,6 +402,16 @@ def main():
     print(f"Вихідний розмір тексту: {len(text)} символів")
     print(f"Оброблений текст: {len(analyzer.processed_text)} символів")
     print(f"Текст без пробілів: {len(analyzer.processed_text_no_spaces)} символів")
+    
+    # Експорт CSV якщо запитано
+    if args.export_csv:
+        analyzer.export_bigram_matrix_csv(
+            args.export_csv,
+            include_spaces=not args.no_spaces,
+            overlapping=not args.non_overlapping
+        )
+        print("\nЕкспорт завершено. Завершення роботи.")
+        return
     
     # Аналіз з пробілами
     print("\n" + "=" * 50)
