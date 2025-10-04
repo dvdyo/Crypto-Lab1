@@ -296,22 +296,25 @@ class BigramPredictor:
         print("ІНТЕРАКТИВНИЙ РЕЖИМ ПЕРЕДБАЧЕННЯ НАСТУПНОГО СИМВОЛУ")
         print("=" * 60)
         print("\nВведіть символ, щоб побачити найбільш ймовірні наступні символи")
+        print("Для пробілу введіть '_' (підкреслення)")
         print("Для виходу введіть 'exit' або 'quit'")
         print("Для виведення алфавіту введіть 'alphabet'")
         print("-" * 60)
         
         while True:
             try:
-                user_input = input("\nВведіть символ: ").strip()
+                user_input = input("\nВведіть символ: ")
                 
+                # Не використовуємо strip() щоб зберегти пробіли
                 if not user_input:
                     continue
                 
-                if user_input.lower() in ['exit', 'quit', 'вихід']:
+                # Перевірка команд (тут можна використати strip для команд)
+                if user_input.strip().lower() in ['exit', 'quit', 'вихід']:
                     print("До побачення!")
                     break
                 
-                if user_input.lower() == 'alphabet':
+                if user_input.strip().lower() == 'alphabet':
                     print("\nАлфавіт матриці:")
                     display_alphabet = [c if c != ' ' else '(пробіл)' for c in self.alphabet]
                     print(', '.join(display_alphabet))
@@ -319,6 +322,10 @@ class BigramPredictor:
                 
                 # Беремо тільки перший символ
                 char = user_input[0]
+                
+                # Конвертуємо підкреслення в пробіл
+                if char == '_':
+                    char = ' '
                 
                 predictions = self.predict_next(char)
                 
