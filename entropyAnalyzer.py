@@ -13,6 +13,10 @@ from collections import Counter, defaultdict
 import argparse
 import re
 
+# =============================================================================
+# CORE LOGIC CLASSES (UNCHANGED)
+# =============================================================================
+
 class TextEntropyAnalyzer:
     def __init__(self, text):
         # Ініціалізація аналізатора з попередньо обробленим текстом
@@ -129,11 +133,9 @@ class TextEntropyAnalyzer:
             with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 
-                # Заголовок: перший стовпець порожній, далі всі символи
                 header = [''] + chars
                 writer.writerow(header)
                 
-                # Кожен рядок: перший символ біграми, далі частоти
                 for char1 in chars:
                     row = [char1]
                     for char2 in chars:
@@ -142,14 +144,10 @@ class TextEntropyAnalyzer:
                         row.append(freq)
                     writer.writerow(row)
             
-            print(f"\nМатриця біграм успішно експортована в '{filename}'")
-            print(f"Розмір матриці: {len(chars)}x{len(chars)}")
-            print(f"Всього біграм: {len(bigram_frequencies)}")
-            print(f"Тип біграм: {'перекриваючі' if overlapping else 'неперекриваючі'}")
-            print(f"Включає пробіли: {'так' if include_spaces else 'ні'}")
+            print(f"Матриця біграм успішно експортована в '{filename}'")
             
         except IOError as e:
-            print(f"Помилка при записі файлу: {e}")
+            print(f"Помилка при записі файлу: {e}", file=sys.stderr)
             sys.exit(1)
     
     def print_letter_frequencies(self, include_spaces=True):
@@ -160,46 +158,11 @@ class TextEntropyAnalyzer:
         print(f"{'Буква':<10}{'Частота':<15}{'Відсоток':<10}")
         print("-" * 35)
         
-        # Сортування за частотою (за спаданням)
         sorted_freq = sorted(frequencies.items(), key=lambda x: x[1], reverse=True)
         
         for letter, freq in sorted_freq:
             display_letter = '(пробіл)' if letter == ' ' else letter
             print(f"{display_letter:<10}{freq:<15.6f}{freq*100:<10.2f}%")
-    
-    def print_bigram_matrix(self, include_spaces=True, overlapping=True):
-        """Виведення частот біграм у вигляді матриці"""
-        bigram_frequencies = self.calculate_bigram_frequencies(include_spaces, overlapping)
-        
-        # Отримання всіх унікальних символів
-        if include_spaces:
-            chars = sorted(set('абвгдежзийклмнопрстуфхцчшщьыэюя '))
-        else:
-            chars = sorted(set('абвгдежзийклмнопрстуфхцчшщьыэюя'))
-        
-        print("\n=== Матриця частот біграм ===")
-        print(f"Тип: {'перекриваючі' if overlapping else 'неперекриваючі'}")
-        print("(Значення помножені на 1000 для зручності читання)")
-        
-        # Виведення заголовка
-        print("   ", end="")
-        for char in chars:
-            display_char = '_' if char == ' ' else char
-            print(f"{display_char:^3}", end="")
-        print()
-        
-        # Виведення матриці
-        for char1 in chars:
-            display_char1 = '_' if char1 == ' ' else char1
-            print(f"{display_char1:^3}", end="")
-            for char2 in chars:
-                bigram = char1 + char2
-                freq = bigram_frequencies.get(bigram, 0) * 1000
-                if freq > 0:
-                    print(f"{freq:3.0f}", end="")
-                else:
-                    print("  .", end="")
-            print()
     
     def print_top_bigrams(self, include_spaces=True, overlapping=True, top_n=20):
         """Виведення топ N найчастіших біграм"""
@@ -220,6 +183,7 @@ class TextEntropyAnalyzer:
     def calculate_redundancy(self, H_value, alphabet_size):
         """Обчислення надлишковості R = 1 - H∞/H₀"""
         H0 = math.log2(alphabet_size)
+        if H0 == 0: return 0
         R = 1 - (H_value / H0)
         return R
 
@@ -239,55 +203,40 @@ class BigramPredictor:
             with open(filename, 'r', encoding='utf-8') as csvfile:
                 reader = csv.reader(csvfile)
                 
-                # Читання заголовка (алфавіт)
                 header = next(reader)
-                self.alphabet = header[1:]  # Пропускаємо перший порожній елемент
+                self.alphabet = header[1:]
                 
-                # Читання рядків матриці
                 for row in reader:
-                    if not row:
-                        continue
-                    
+                    if not row: continue
                     char1 = row[0]
                     for i, freq_str in enumerate(row[1:]):
-                        if i >= len(self.alphabet):
-                            break
+                        if i >= len(self.alphabet): break
                         char2 = self.alphabet[i]
                         try:
                             freq = float(freq_str)
-                            if freq > 0:
-                                self.bigram_frequencies[(char1, char2)] = freq
-                        except ValueError:
-                            continue
+                            if freq > 0: self.bigram_frequencies[(char1, char2)] = freq
+                        except ValueError: continue
             
             print(f"Матриця біграм успішно завантажена з '{filename}'")
-            print(f"Розмір алфавіту: {len(self.alphabet)}")
-            print(f"Завантажено біграм: {len(self.bigram_frequencies)}")
             
         except FileNotFoundError:
-            print(f"Помилка: Файл '{filename}' не знайдено")
+            print(f"Помилка: Файл '{filename}' не знайдено", file=sys.stderr)
             sys.exit(1)
         except Exception as e:
-            print(f"Помилка при читанні CSV файлу: {e}")
+            print(f"Помилка при читанні CSV файлу: {e}", file=sys.stderr)
             sys.exit(1)
     
     def predict_next(self, char):
         """Передбачення наступного символу після заданого"""
         char = char.lower()
+        if char not in self.alphabet: return []
         
-        # Перевірка, чи символ є в алфавіті
-        if char not in self.alphabet:
-            return []
-        
-        # Знаходження всіх біграм, що починаються з цього символу
         predictions = []
         for (c1, c2), freq in self.bigram_frequencies.items():
             if c1 == char:
                 predictions.append((c2, freq))
         
-        # Сортування за частотою (за спаданням)
         predictions.sort(key=lambda x: x[1], reverse=True)
-        
         return predictions
     
     def run_interactive(self):
@@ -298,47 +247,27 @@ class BigramPredictor:
         print("\nВведіть символ, щоб побачити найбільш ймовірні наступні символи")
         print("Для пробілу введіть '_' (підкреслення)")
         print("Для виходу введіть 'exit' або 'quit'")
-        print("Для виведення алфавіту введіть 'alphabet'")
-        print("-" * 60)
         
         while True:
             try:
                 user_input = input("\nВведіть символ: ")
+                if not user_input: continue
                 
-                # Не використовуємо strip() щоб зберегти пробіли
-                if not user_input:
-                    continue
-                
-                # Перевірка команд (тут можна використати strip для команд)
                 if user_input.strip().lower() in ['exit', 'quit', 'вихід']:
                     print("До побачення!")
                     break
                 
-                if user_input.strip().lower() == 'alphabet':
-                    print("\nАлфавіт матриці:")
-                    display_alphabet = [c if c != ' ' else '(пробіл)' for c in self.alphabet]
-                    print(', '.join(display_alphabet))
-                    continue
-                
-                # Беремо тільки перший символ
                 char = user_input[0]
-                
-                # Конвертуємо підкреслення в пробіл
-                if char == '_':
-                    char = ' '
+                if char == '_': char = ' '
                 
                 predictions = self.predict_next(char)
                 
+                display_char = char if char != ' ' else '(пробіл)'
                 if not predictions:
-                    display_char = char if char != ' ' else '(пробіл)'
                     print(f"\nСимвол '{display_char}' не знайдено в алфавіті або немає даних про біграми")
                     continue
                 
-                # Виведення результатів
-                display_char = char if char != ' ' else '(пробіл)'
-                print(f"\n{'='*60}")
-                print(f"Передбачення для символу '{display_char}':")
-                print(f"{'='*60}")
+                print(f"\nПередбачення для символу '{display_char}':")
                 print(f"{'Ранг':<6}{'Символ':<15}{'Частота':<18}{'Відсоток':<12}")
                 print("-" * 60)
                 
@@ -346,173 +275,172 @@ class BigramPredictor:
                     display_next = next_char if next_char != ' ' else '(пробіл)'
                     print(f"{rank:<6}{display_next:<15}{freq:<18.10f}{freq*100:<12.4f}%")
                 
-                print(f"\nВсього варіантів: {len(predictions)}")
-                
             except KeyboardInterrupt:
                 print("\n\nПерервано користувачем. До побачення!")
                 break
             except Exception as e:
                 print(f"Помилка: {e}")
 
+# =============================================================================
+# CLI HANDLER FUNCTIONS
+# =============================================================================
 
-def main():
-    parser = argparse.ArgumentParser(
-        description='Аналіз ентропії тексту для криптографічного практикуму'
-    )
-    
-    # Основні аргументи
-    parser.add_argument('filename', nargs='?', help='Шлях до текстового файлу для аналізу')
-    parser.add_argument('--encoding', default='utf-8', 
-                       help='Кодування файлу (за замовчуванням: utf-8)')
-    parser.add_argument('--no-spaces', action='store_true',
-                       help='Аналізувати текст без пробілів')
-    parser.add_argument('--non-overlapping', action='store_true',
-                       help='Використовувати біграми, що не перекриваються')
-    parser.add_argument('--both', action='store_true',
-                       help='Показати аналіз і з пробілами, і без (за замовчуванням)')
-    
-    # Нові аргументи для експорту та передбачення
-    parser.add_argument('--export-csv', metavar='OUTPUT_FILE',
-                       help='Експортувати матрицю біграм у CSV файл')
-    parser.add_argument('--predict', metavar='CSV_FILE',
-                       help='Запустити інтерактивний режим передбачення з CSV файлу')
-    
-    args = parser.parse_args()
-    
-    # Режим передбачення
-    if args.predict:
-        predictor = BigramPredictor(args.predict)
-        predictor.run_interactive()
-        return
-    
-    # Звичайний режим аналізу
-    if not args.filename:
-        parser.error("Необхідно вказати файл для аналізу або використати --predict")
-    
-    # Читання файлу
+def handle_analyze(args):
+    """Handler for the 'analyze' command."""
     try:
         with open(args.filename, 'r', encoding=args.encoding) as f:
             text = f.read()
     except FileNotFoundError:
-        print(f"Помилка: Файл '{args.filename}' не знайдено")
+        print(f"Помилка: Файл '{args.filename}' не знайдено", file=sys.stderr)
         sys.exit(1)
     except UnicodeDecodeError:
-        print(f"Помилка: Не вдалося прочитати файл з кодуванням {args.encoding}")
-        print("Спробуйте інше кодування, наприклад: --encoding cp1251")
+        print(f"Помилка: Не вдалося прочитати файл з кодуванням {args.encoding}", file=sys.stderr)
         sys.exit(1)
-    
-    # Створення аналізатора
+
     analyzer = TextEntropyAnalyzer(text)
-    
-    print("=" * 50)
-    print("АНАЛІЗ ЕНТРОПІЇ ТЕКСТУ")
-    print("=" * 50)
-    print(f"Файл: {args.filename}")
-    print(f"Вихідний розмір тексту: {len(text)} символів")
-    print(f"Оброблений текст: {len(analyzer.processed_text)} символів")
-    print(f"Текст без пробілів: {len(analyzer.processed_text_no_spaces)} символів")
-    
-    # Визначення параметрів аналізу
-    include_spaces = not args.no_spaces
-    overlapping = not args.non_overlapping
-    show_both = args.both or (not args.no_spaces and not args.both)
-    
-    # Експорт CSV якщо запитано
-    if args.export_csv:
-        analyzer.export_bigram_matrix_csv(
-            args.export_csv,
-            include_spaces=include_spaces,
-            overlapping=overlapping
-        )
-        print("\nЕкспорт завершено.")
-        return
-    
-    # Функція для виконання та виведення аналізу
-    def run_analysis(include_spaces, overlapping):
+    overlapping = args.bigrams == 'overlapping'
+
+    # Determine which analysis modes to run
+    modes_to_run = []
+    if args.spaces in ['include', 'both']:
+        modes_to_run.append(True)  # True means include_spaces
+    if args.spaces in ['exclude', 'both']:
+        modes_to_run.append(False)
+
+    results = {}
+    for include_spaces in modes_to_run:
+        mode_key = "with_spaces" if include_spaces else "without_spaces"
         alphabet_size = 32 if include_spaces else 31
-        mode_name = "З ПРОБІЛАМИ" if include_spaces else "БЕЗ ПРОБІЛІВ"
-        bigram_type = "перекриваючі" if overlapping else "неперекриваючі"
-        
-        print("\n" + "=" * 50)
-        print(f"АНАЛІЗ {mode_name} ({alphabet_size} символів в алфавіті)")
-        print(f"Біграми: {bigram_type}")
-        print("=" * 50)
-        
-        # Частоти літер
-        analyzer.print_letter_frequencies(include_spaces=include_spaces)
-        
-        # H1
+
         H1 = analyzer.calculate_H1(include_spaces=include_spaces)
-        print(f"\nH₁ = {H1:.4f} біт/символ")
-        
-        # Топ біграми
-        analyzer.print_top_bigrams(include_spaces=include_spaces, overlapping=overlapping)
-        
-        # H2
         H2 = analyzer.calculate_H2(include_spaces=include_spaces, overlapping=overlapping)
-        print(f"\nH₂ = {H2:.4f} біт/символ")
-        
-        # Надлишковість
         R1 = analyzer.calculate_redundancy(H1, alphabet_size)
         R2 = analyzer.calculate_redundancy(H2, alphabet_size)
         
-        print(f"\nНадлишковість R₁ = {R1:.4f} ({R1*100:.2f}%)")
-        print(f"Надлишковість R₂ = {R2:.4f} ({R2*100:.2f}%)")
-        
-        return H1, H2, R1, R2
+        results[mode_key] = {'H1': H1, 'H2': H2, 'R1': R1, 'R2': R2}
+
+        if args.verbose:
+            print("\n" + "─" * 50)
+            mode_name = "З ПРОБІЛАМИ" if include_spaces else "БЕЗ ПРОБІЛІВ"
+            print(f"ДЕТАЛЬНИЙ АНАЛІЗ ({mode_name})")
+            print("─" * 50)
+            analyzer.print_letter_frequencies(include_spaces=include_spaces)
+            analyzer.print_top_bigrams(include_spaces=include_spaces, overlapping=overlapping)
     
-    # Виконання аналізу відповідно до параметрів
-    results = []
+    # Print final summary table
+    print("\n" + "=" * 60)
+    print("                ПІДСУМКОВІ РЕЗУЛЬТАТИ АНАЛІЗУ")
+    print("=" * 60)
+    print(f"Файл: {args.filename}")
+    print(f"Тип біграм: {'перекриваючі' if overlapping else 'неперекриваючі'}")
+    print("-" * 60)
     
-    if show_both:
-        # Показати обидва аналізи
-        print("\n" + "🔹" * 25)
-        print("РЕЖИМ: Повний аналіз (з пробілами та без)")
-        print("🔹" * 25)
-        
-        # З пробілами
-        H1_with, H2_with, R1_with, R2_with = run_analysis(True, overlapping)
-        results.append(("З пробілами", H1_with, H2_with, R1_with, R2_with))
-        
-        # Без пробілів
-        H1_no, H2_no, R1_no, R2_no = run_analysis(False, overlapping)
-        results.append(("Без пробілів", H1_no, H2_no, R1_no, R2_no))
-        
-    else:
-        # Показати тільки один аналіз
-        mode = "без пробілів" if args.no_spaces else "з пробілами"
-        bigram_mode = "неперекриваючі біграми" if args.non_overlapping else "перекриваючі біграми"
-        print("\n" + "🔹" * 25)
-        print(f"РЕЖИМ: Аналіз {mode}, {bigram_mode}")
-        print("🔹" * 25)
-        
-        H1, H2, R1, R2 = run_analysis(include_spaces, overlapping)
-        results.append((mode.capitalize(), H1, H2, R1, R2))
+    header = f"{'Метрика':<25}"
+    if 'with_spaces' in results: header += f"{'З пробілами':<17}"
+    if 'without_spaces' in results: header += f"{'Без пробілів':<17}"
+    print(header)
+    print("-" * 60)
+
+    for metric_key, metric_name in [('H1', 'H₁ (біт/символ)'), ('H2', 'H₂ (біт/символ)'),
+                                     ('R1', 'Надлишковість R₁ (%)'), ('R2', 'Надлишковість R₂ (%)')]:
+        line = f"{metric_name:<25}"
+        multiplier = 100 if '%' in metric_name else 1
+        fmt = ".2f" if '%' in metric_name else ".4f"
+
+        if 'with_spaces' in results:
+            val = results['with_spaces'][metric_key] * multiplier
+            line += f"{val:<17{fmt}}"
+        if 'without_spaces' in results:
+            val = results['without_spaces'][metric_key] * multiplier
+            line += f"{val:<17{fmt}}"
+        print(line)
+    print("=" * 60)
+
+
+def handle_export(args):
+    """Handler for the 'export' command."""
+    try:
+        with open(args.in_filename, 'r', encoding=args.encoding) as f:
+            text = f.read()
+    except FileNotFoundError:
+        print(f"Помилка: Файл '{args.in_filename}' не знайдено", file=sys.stderr)
+        sys.exit(1)
+    except UnicodeDecodeError:
+        print(f"Помилка: Не вдалося прочитати файл з кодуванням {args.encoding}", file=sys.stderr)
+        sys.exit(1)
     
-    # Підсумкова таблиця якщо є кілька результатів
-    if len(results) > 1:
-        print("\n" + "=" * 50)
-        print("ПІДСУМКОВА ТАБЛИЦЯ РЕЗУЛЬТАТІВ")
-        print("=" * 50)
-        print(f"Тип біграм: {'перекриваючі' if overlapping else 'неперекриваючі'}")
-        print("-" * 50)
-        
-        print(f"{'Модель':<25}{'З пробілами':<15}{'Без пробілів':<15}")
-        print("-" * 55)
-        
-        # Підготовка даних для таблиці
-        with_spaces_data = results[0]
-        no_spaces_data = results[1]
-        
-        print(f"{'H₁ (біт/символ)':<25}{with_spaces_data[1]:<15.4f}{no_spaces_data[1]:<15.4f}")
-        print(f"{'H₂ (біт/символ)':<25}{with_spaces_data[2]:<15.4f}{no_spaces_data[2]:<15.4f}")
-        print(f"{'Надлишковість R₁ (%)':<25}{with_spaces_data[3]*100:<15.2f}{no_spaces_data[3]*100:<15.2f}")
-        print(f"{'Надлишковість R₂ (%)':<25}{with_spaces_data[4]*100:<15.2f}{no_spaces_data[4]*100:<15.2f}")
+    analyzer = TextEntropyAnalyzer(text)
     
-    # Опціонально: виведення матриці біграм
-    print("\nБажаєте вивести повну матрицю біграм? (y/n): ", end="")
-    if input().lower() == 'y':
-        analyzer.print_bigram_matrix(include_spaces=include_spaces, overlapping=overlapping)
+    include_spaces = args.spaces == 'include'
+    overlapping = args.bigrams == 'overlapping'
+    
+    print(f"Експорт матриці біграм з файлу '{args.in_filename}'...")
+    print(f"  - Режим пробілів: {'з пробілами' if include_spaces else 'без пробілів'}")
+    print(f"  - Тип біграм: {'перекриваючі' if overlapping else 'неперекриваючі'}")
+
+    analyzer.export_bigram_matrix_csv(
+        args.output,
+        include_spaces=include_spaces,
+        overlapping=overlapping
+    )
+
+
+def handle_predict(args):
+    """Handler for the 'predict' command."""
+    predictor = BigramPredictor(args.matrix_filename)
+    predictor.run_interactive()
+
+# =============================================================================
+# MAIN FUNCTION AND ARGUMENT PARSING
+# =============================================================================
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Експериментальна оцінка ентропії тексту.',
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Доступні команди')
+
+    # --- ANALYZE command ---
+    parser_analyze = subparsers.add_parser('analyze', help='Аналіз тексту для обчислення ентропії')
+    parser_analyze.add_argument('filename', help='Шлях до текстового файлу для аналізу')
+    parser_analyze.add_argument(
+        '--spaces', choices=['include', 'exclude', 'both'], default='include',
+        help='Як обробляти пробіли:\n'
+             '  include: аналізувати текст з пробілами (за замовчуванням)\n'
+             '  exclude: аналізувати текст без пробілів\n'
+             '  both:    показати результати для обох випадків'
+    )
+    parser_analyze.add_argument(
+        '--bigrams', choices=['overlapping', 'non-overlapping'], default='overlapping',
+        help='Тип біграм для використання (за замовчуванням: overlapping)'
+    )
+    parser_analyze.add_argument('-v', '--verbose', action='store_true', help='Вивести детальні таблиці частот')
+    parser_analyze.add_argument('--encoding', default='utf-8', help='Кодування вхідного файлу (за замовчуванням: utf-8)')
+    parser_analyze.set_defaults(func=handle_analyze)
+
+    # --- EXPORT command ---
+    parser_export = subparsers.add_parser('export', help='Експорт матриці частот біграм у CSV файл')
+    parser_export.add_argument('in_filename', help='Шлях до вхідного текстового файлу')
+    parser_export.add_argument('-o', '--output', required=True, help='Шлях до вихідного CSV файлу')
+    parser_export.add_argument(
+        '--spaces', choices=['include', 'exclude'], default='include',
+        help='Включати або виключати пробіли при побудові матриці (за замовчуванням: include)'
+    )
+    parser_export.add_argument(
+        '--bigrams', choices=['overlapping', 'non-overlapping'], default='overlapping',
+        help='Тип біграм для використання (за замовчуванням: overlapping)'
+    )
+    parser_export.add_argument('--encoding', default='utf-8', help='Кодування вхідного файлу (за замовчуванням: utf-8)')
+    parser_export.set_defaults(func=handle_export)
+
+    # --- PREDICT command ---
+    parser_predict = subparsers.add_parser('predict', help='Запуск інтерактивного режиму передбачення з матриці')
+    parser_predict.add_argument('matrix_filename', help='Шлях до CSV файлу з матрицею біграм')
+    parser_predict.set_defaults(func=handle_predict)
+    
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":
