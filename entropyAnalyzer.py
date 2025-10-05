@@ -11,11 +11,11 @@ import sys
 import csv
 from collections import Counter, defaultdict
 import argparse
-
+import re
 
 class TextEntropyAnalyzer:
     def __init__(self, text):
-        """Ініціалізація аналізатора з попередньо обробленим текстом"""
+        # Ініціалізація аналізатора з попередньо обробленим текстом
         self.original_text = text
         self.processed_text = self.preprocess_text(text)
         self.processed_text_no_spaces = self.processed_text.replace(' ', '')
@@ -28,21 +28,17 @@ class TextEntropyAnalyzer:
         - Заміна кількох пробілів на один
         - Заміна ё на е, ъ на ь
         """
-        # Перетворення на нижній регістр
         text = text.lower()
         
-        # Заміна специфічних символів
         text = text.replace('ё', 'е')
         text = text.replace('ъ', 'ь')
         
-        # Збереження лише російських літер та пробілів
         allowed_chars = set('абвгдежзийклмнопрстуфхцчшщьыэюя ')
         filtered_text = ''.join(char if char in allowed_chars else ' ' for char in text)
         
         # Заміна кількох пробілів на один
-        while '  ' in filtered_text:
-            filtered_text = filtered_text.replace('  ', ' ')
-            
+        filtered_text = re.sub(r' +', ' ', filtered_text)
+
         return filtered_text.strip()
     
     def calculate_letter_frequencies(self, include_spaces=True):
@@ -149,6 +145,8 @@ class TextEntropyAnalyzer:
             print(f"\nМатриця біграм успішно експортована в '{filename}'")
             print(f"Розмір матриці: {len(chars)}x{len(chars)}")
             print(f"Всього біграм: {len(bigram_frequencies)}")
+            print(f"Тип біграм: {'перекриваючі' if overlapping else 'неперекриваючі'}")
+            print(f"Включає пробіли: {'так' if include_spaces else 'ні'}")
             
         except IOError as e:
             print(f"Помилка при записі файлу: {e}")
@@ -180,6 +178,7 @@ class TextEntropyAnalyzer:
             chars = sorted(set('абвгдежзийклмнопрстуфхцчшщьыэюя'))
         
         print("\n=== Матриця частот біграм ===")
+        print(f"Тип: {'перекриваючі' if overlapping else 'неперекриваючі'}")
         print("(Значення помножені на 1000 для зручності читання)")
         
         # Виведення заголовка
@@ -207,6 +206,7 @@ class TextEntropyAnalyzer:
         bigram_frequencies = self.calculate_bigram_frequencies(include_spaces, overlapping)
         
         print(f"\n=== Топ-{top_n} найчастіших біграм ===")
+        print(f"Тип: {'перекриваючі' if overlapping else 'неперекриваючі'}")
         print(f"{'Біграма':<10}{'Частота':<15}{'Відсоток':<10}")
         print("-" * 35)
         
@@ -368,6 +368,8 @@ def main():
                        help='Аналізувати текст без пробілів')
     parser.add_argument('--non-overlapping', action='store_true',
                        help='Використовувати біграми, що не перекриваються')
+    parser.add_argument('--both', action='store_true',
+                       help='Показати аналіз і з пробілами, і без (за замовчуванням)')
     
     # Нові аргументи для експорту та передбачення
     parser.add_argument('--export-csv', metavar='OUTPUT_FILE',
@@ -410,76 +412,107 @@ def main():
     print(f"Оброблений текст: {len(analyzer.processed_text)} символів")
     print(f"Текст без пробілів: {len(analyzer.processed_text_no_spaces)} символів")
     
+    # Визначення параметрів аналізу
+    include_spaces = not args.no_spaces
+    overlapping = not args.non_overlapping
+    show_both = args.both or (not args.no_spaces and not args.both)
+    
     # Експорт CSV якщо запитано
     if args.export_csv:
         analyzer.export_bigram_matrix_csv(
             args.export_csv,
-            include_spaces=not args.no_spaces,
-            overlapping=not args.non_overlapping
+            include_spaces=include_spaces,
+            overlapping=overlapping
         )
-        print("\nЕкспорт завершено. Завершення роботи.")
+        print("\nЕкспорт завершено.")
         return
     
-    # Аналіз з пробілами
-    print("\n" + "=" * 50)
-    print("АНАЛІЗ З ПРОБІЛАМИ (32 символи в алфавіті)")
-    print("=" * 50)
+    # Функція для виконання та виведення аналізу
+    def run_analysis(include_spaces, overlapping):
+        alphabet_size = 32 if include_spaces else 31
+        mode_name = "З ПРОБІЛАМИ" if include_spaces else "БЕЗ ПРОБІЛІВ"
+        bigram_type = "перекриваючі" if overlapping else "неперекриваючі"
+        
+        print("\n" + "=" * 50)
+        print(f"АНАЛІЗ {mode_name} ({alphabet_size} символів в алфавіті)")
+        print(f"Біграми: {bigram_type}")
+        print("=" * 50)
+        
+        # Частоти літер
+        analyzer.print_letter_frequencies(include_spaces=include_spaces)
+        
+        # H1
+        H1 = analyzer.calculate_H1(include_spaces=include_spaces)
+        print(f"\nH₁ = {H1:.4f} біт/символ")
+        
+        # Топ біграми
+        analyzer.print_top_bigrams(include_spaces=include_spaces, overlapping=overlapping)
+        
+        # H2
+        H2 = analyzer.calculate_H2(include_spaces=include_spaces, overlapping=overlapping)
+        print(f"\nH₂ = {H2:.4f} біт/символ")
+        
+        # Надлишковість
+        R1 = analyzer.calculate_redundancy(H1, alphabet_size)
+        R2 = analyzer.calculate_redundancy(H2, alphabet_size)
+        
+        print(f"\nНадлишковість R₁ = {R1:.4f} ({R1*100:.2f}%)")
+        print(f"Надлишковість R₂ = {R2:.4f} ({R2*100:.2f}%)")
+        
+        return H1, H2, R1, R2
     
-    analyzer.print_letter_frequencies(include_spaces=True)
+    # Виконання аналізу відповідно до параметрів
+    results = []
     
-    H1_with_spaces = analyzer.calculate_H1(include_spaces=True)
-    print(f"\nH₁ = {H1_with_spaces:.4f} біт/символ")
+    if show_both:
+        # Показати обидва аналізи
+        print("\n" + "🔹" * 25)
+        print("РЕЖИМ: Повний аналіз (з пробілами та без)")
+        print("🔹" * 25)
+        
+        # З пробілами
+        H1_with, H2_with, R1_with, R2_with = run_analysis(True, overlapping)
+        results.append(("З пробілами", H1_with, H2_with, R1_with, R2_with))
+        
+        # Без пробілів
+        H1_no, H2_no, R1_no, R2_no = run_analysis(False, overlapping)
+        results.append(("Без пробілів", H1_no, H2_no, R1_no, R2_no))
+        
+    else:
+        # Показати тільки один аналіз
+        mode = "без пробілів" if args.no_spaces else "з пробілами"
+        bigram_mode = "неперекриваючі біграми" if args.non_overlapping else "перекриваючі біграми"
+        print("\n" + "🔹" * 25)
+        print(f"РЕЖИМ: Аналіз {mode}, {bigram_mode}")
+        print("🔹" * 25)
+        
+        H1, H2, R1, R2 = run_analysis(include_spaces, overlapping)
+        results.append((mode.capitalize(), H1, H2, R1, R2))
     
-    analyzer.print_top_bigrams(include_spaces=True, overlapping=True)
+    # Підсумкова таблиця якщо є кілька результатів
+    if len(results) > 1:
+        print("\n" + "=" * 50)
+        print("ПІДСУМКОВА ТАБЛИЦЯ РЕЗУЛЬТАТІВ")
+        print("=" * 50)
+        print(f"Тип біграм: {'перекриваючі' if overlapping else 'неперекриваючі'}")
+        print("-" * 50)
+        
+        print(f"{'Модель':<25}{'З пробілами':<15}{'Без пробілів':<15}")
+        print("-" * 55)
+        
+        # Підготовка даних для таблиці
+        with_spaces_data = results[0]
+        no_spaces_data = results[1]
+        
+        print(f"{'H₁ (біт/символ)':<25}{with_spaces_data[1]:<15.4f}{no_spaces_data[1]:<15.4f}")
+        print(f"{'H₂ (біт/символ)':<25}{with_spaces_data[2]:<15.4f}{no_spaces_data[2]:<15.4f}")
+        print(f"{'Надлишковість R₁ (%)':<25}{with_spaces_data[3]*100:<15.2f}{no_spaces_data[3]*100:<15.2f}")
+        print(f"{'Надлишковість R₂ (%)':<25}{with_spaces_data[4]*100:<15.2f}{no_spaces_data[4]*100:<15.2f}")
     
-    H2_with_spaces = analyzer.calculate_H2(include_spaces=True, overlapping=True)
-    print(f"\nH₂ = {H2_with_spaces:.4f} біт/символ")
-    
-    # Обчислення надлишковості для різних моделей
-    R1_with_spaces = analyzer.calculate_redundancy(H1_with_spaces, 32)
-    R2_with_spaces = analyzer.calculate_redundancy(H2_with_spaces, 32)
-    
-    print(f"\nНадлишковість R₁ = {R1_with_spaces:.4f} ({R1_with_spaces*100:.2f}%)")
-    print(f"Надлишковість R₂ = {R2_with_spaces:.4f} ({R2_with_spaces*100:.2f}%)")
-    
-    # Аналіз без пробілів
-    print("\n" + "=" * 50)
-    print("АНАЛІЗ БЕЗ ПРОБІЛІВ (31 символ в алфавіті)")
-    print("=" * 50)
-    
-    analyzer.print_letter_frequencies(include_spaces=False)
-    
-    H1_no_spaces = analyzer.calculate_H1(include_spaces=False)
-    print(f"\nH₁ = {H1_no_spaces:.4f} біт/символ")
-    
-    analyzer.print_top_bigrams(include_spaces=False, overlapping=True)
-    
-    H2_no_spaces = analyzer.calculate_H2(include_spaces=False, overlapping=True)
-    print(f"\nH₂ = {H2_no_spaces:.4f} біт/символ")
-    
-    # Обчислення надлишковості для різних моделей
-    R1_no_spaces = analyzer.calculate_redundancy(H1_no_spaces, 31)
-    R2_no_spaces = analyzer.calculate_redundancy(H2_no_spaces, 31)
-    
-    print(f"\nНадлишковість R₁ = {R1_no_spaces:.4f} ({R1_no_spaces*100:.2f}%)")
-    print(f"Надлишковість R₂ = {R2_no_spaces:.4f} ({R2_no_spaces*100:.2f}%)")
-    
-    # Підсумки
-    print("\n" + "=" * 50)
-    print("ПІДСУМКОВА ТАБЛИЦЯ РЕЗУЛЬТАТІВ")
-    print("=" * 50)
-    
-    print(f"{'Модель':<25}{'З пробілами':<15}{'Без пробілів':<15}")
-    print("-" * 55)
-    print(f"{'H₁ (біт/символ)':<25}{H1_with_spaces:<15.4f}{H1_no_spaces:<15.4f}")
-    print(f"{'H₂ (біт/символ)':<25}{H2_with_spaces:<15.4f}{H2_no_spaces:<15.4f}")
-    print(f"{'Надлишковість R₁ (%)':<25}{R1_with_spaces*100:<15.2f}{R1_no_spaces*100:<15.2f}")
-    print(f"{'Надлишковість R₂ (%)':<25}{R2_with_spaces*100:<15.2f}{R2_no_spaces*100:<15.2f}")
-    
-    # Опціонально: виведення матриці біграм (може бути дуже великою)
+    # Опціонально: виведення матриці біграм
     print("\nБажаєте вивести повну матрицю біграм? (y/n): ", end="")
     if input().lower() == 'y':
-        analyzer.print_bigram_matrix(include_spaces=True, overlapping=True)
+        analyzer.print_bigram_matrix(include_spaces=include_spaces, overlapping=overlapping)
 
 
 if __name__ == "__main__":
