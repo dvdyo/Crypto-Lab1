@@ -45,6 +45,27 @@ class AnalysisConfig:
     top_n: int = 20
     verbose: bool = False
     show_matrix: bool = False
+    show_stats: bool = False
+
+
+@dataclass
+class TextStats:
+    """Statistics about text processing."""
+    original_length: int
+    processed_length: int
+    processed_no_spaces_length: Optional[int] = None
+    
+    def print_stats(self) -> None:
+        """Print text processing statistics."""
+        print("\n" + "=" * 60)
+        print("СТАТИСТИКА ОБРОБКИ ТЕКСТУ")
+        print("=" * 60)
+        print(f"Вхідний текст (символів):           {self.original_length:>12,}")
+        print(f"Оброблений текст (символів):        {self.processed_length:>12,}")
+        if self.processed_no_spaces_length is not None:
+            print(f"Оброблений текст без пробілів:      {self.processed_no_spaces_length:>12,}")
+        print(f"Видалено символів:                  {self.original_length - self.processed_length:>12,}")
+        print("=" * 60)
 
 
 # =============================================================================
@@ -83,6 +104,10 @@ def get_alphabet_chars(include_spaces: bool) -> str:
 class TextPreprocessor:
     """Handles text preprocessing operations."""
     
+    # Pre-compile regex patterns - these are MUCH faster than Python loops
+    _NON_CYRILLIC_PATTERN = re.compile(f'[^{CYRILLIC_ALPHABET} ]+')
+    _MULTI_SPACE_PATTERN = re.compile(r' +')
+    
     @staticmethod
     def preprocess(text: str) -> str:
         """
@@ -91,19 +116,20 @@ class TextPreprocessor:
         - Normalizes specific letters (ё -> е, ъ -> ь)
         - Keeps only Russian letters and spaces
         - Replaces multiple spaces with single space
+        
+        Regex-based approach: Let C code (in re module) do the heavy lifting.
         """
-        # Lowercase and normalize characters
+        # Step 1: Lowercase and normalize (fast C operation)
         text = text.lower().translate(CHAR_NORMALIZATION)
         
-        # Filter allowed characters
-        allowed_chars = set(CYRILLIC_ALPHABET_WITH_SPACE)
-        filtered_text = ''.join(
-            char if char in allowed_chars else ' ' for char in text
-        )
+        # Step 2: Replace all non-Cyrillic characters with space (regex is fast for this)
+        text = TextPreprocessor._NON_CYRILLIC_PATTERN.sub(' ', text)
         
-        # Normalize spaces
-        filtered_text = re.sub(r' +', ' ', filtered_text).strip()
-        return filtered_text
+        # Step 3: Collapse multiple spaces into one (another fast regex operation)
+        text = TextPreprocessor._MULTI_SPACE_PATTERN.sub(' ', text)
+        
+        # Step 4: Strip leading/trailing spaces
+        return text.strip()
 
 
 # =============================================================================
@@ -115,7 +141,10 @@ class TextEntropyAnalyzer:
 
     def __init__(self, text: str):
         self.original_text = text
+        self.original_length = len(text)
         self.processed_text = TextPreprocessor.preprocess(text)
+        self.processed_length = len(self.processed_text)
+        self._processed_no_spaces_length = None  # Lazy calculation
         self._validate_text()
 
     def _validate_text(self) -> None:
@@ -126,6 +155,20 @@ class TextEntropyAnalyzer:
     def _get_text(self, include_spaces: bool) -> str:
         """Get text with or without spaces."""
         return self.processed_text if include_spaces else self.processed_text.replace(' ', '')
+    
+    def _get_no_spaces_length(self) -> int:
+        """Lazy calculation of no-spaces length."""
+        if self._processed_no_spaces_length is None:
+            self._processed_no_spaces_length = len(self.processed_text.replace(' ', ''))
+        return self._processed_no_spaces_length
+    
+    def get_stats(self, include_no_spaces: bool = False) -> TextStats:
+        """Get text processing statistics."""
+        return TextStats(
+            original_length=self.original_length,
+            processed_length=self.processed_length,
+            processed_no_spaces_length=self._get_no_spaces_length() if include_no_spaces else None
+        )
 
     @lru_cache(maxsize=4)
     def calculate_letter_frequencies(self, include_spaces: bool = True) -> Dict[str, float]:
@@ -134,12 +177,10 @@ class TextEntropyAnalyzer:
         if not text:
             return {}
 
-        letter_counts = Counter(text)
         total_letters = len(text)
-        return {
-            letter: count / total_letters
-            for letter, count in letter_counts.items()
-        }
+        letter_counts = Counter(text)
+        
+        return {letter: count / total_letters for letter, count in letter_counts.items()}
 
     @lru_cache(maxsize=8)
     def calculate_bigram_frequencies(
@@ -147,24 +188,22 @@ class TextEntropyAnalyzer:
         include_spaces: bool = True, 
         overlapping: bool = True
     ) -> Dict[str, float]:
-        """Calculates the frequency of bigrams."""
+        """Calculates the frequency of bigrams - optimized version."""
         text = self._get_text(include_spaces)
         if len(text) < 2:
             return {}
 
-        bigram_counts = defaultdict(int)
-        step = 1 if overlapping else 2
-        for i in range(0, len(text) - 1, step):
-            bigram = text[i:i+2]
-            if len(bigram) == 2:
-                bigram_counts[bigram] += 1
-
-        total_bigrams = sum(bigram_counts.values())
-        return {
-            bigram: count / total_bigrams
-            for bigram, count in bigram_counts.items()
-        }
-
+        if overlapping:
+            # Direct slicing in generator
+            bigram_counts = Counter(text[i:i+2] for i in range(len(text) - 1))
+            total_bigrams = len(text) - 1
+        else:
+            # Non-overlapping: step by 2
+            bigram_counts = Counter(text[i:i+2] for i in range(0, len(text) - 1, 2) if i+2 <= len(text))
+            total_bigrams = len(text) // 2
+        
+        return {bigram: count / total_bigrams for bigram, count in bigram_counts.items()}
+    
     def calculate_h1(self, include_spaces: bool = True) -> float:
         """Calculates entropy H₁ based on single letter frequencies."""
         frequencies = self.calculate_letter_frequencies(include_spaces)
@@ -516,6 +555,12 @@ def handle_analyze(args: argparse.Namespace) -> None:
         print(f"Помилка: {e}", file=sys.stderr)
         sys.exit(1)
     
+    # Show stats if requested or verbose
+    # Include no-spaces count only if we're analyzing without spaces or both
+    if args.show_stats or args.verbose:
+        include_no_spaces = args.spaces in ['exclude', 'both']
+        analyzer.get_stats(include_no_spaces=include_no_spaces).print_stats()
+    
     reporter = TextEntropyReporter(analyzer)
     overlapping = args.bigrams == 'overlapping'
 
@@ -634,6 +679,10 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser_analyze.add_argument(
         '--show-matrix', action='store_true',
         help='Вивести повну матрицю частот біграм на екран'
+    )
+    parser_analyze.add_argument(
+        '--show-stats', action='store_true',
+        help='Показати статистику обробки тексту (кількість символів)'
     )
     parser_analyze.add_argument(
         '--encoding', default='utf-8',
