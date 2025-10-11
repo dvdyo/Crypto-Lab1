@@ -18,8 +18,11 @@ python entropy_analysis.py analyze input.txt
 # Детальний аналіз з обома режимами (з/без пробілів)
 python entropy_analysis.py analyze input.txt --spaces both -v
 
-# Аналіз без пробілів з неперекриваючими біграмами
-python entropy_analysis.py analyze input.txt --spaces exclude --bigrams non-overlapping
+# Порівняння перекриваючих та неперекриваючих біграм
+python entropy_analysis.py analyze input.txt --bigrams both
+
+# Повний аналіз: всі комбінації пробілів та біграм
+python entropy_analysis.py analyze input.txt --spaces both --bigrams both -v
 ```
 
 ### Експорт матриці біграм у CSV
@@ -47,13 +50,15 @@ python entropy_analysis.py predict matrix.csv
 ## Параметри
 
 **analyze:**
+
 - `--spaces` — режим обробки пробілів (`include`, `exclude`, `both`)
-- `--bigrams` — тип біграм (`overlapping`, `non-overlapping`)
+- `--bigrams` — тип біграм (`overlapping`, `non-overlapping`, `both`)
 - `-v, --verbose` — детальний вивід
 - `-n, --top` — кількість елементів для виводу (за замовчуванням: 20)
 - `--encoding` — кодування файлу (за замовчуванням: utf-8)
 
 **export:**
+
 - `-o, --output` — шлях до вихідного CSV файлу
 - `--spaces` — включати пробіли (`include`, `exclude`)
 - `--bigrams` — тип біграм (`overlapping`, `non-overlapping`)
