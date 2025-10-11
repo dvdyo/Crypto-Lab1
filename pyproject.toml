@@ -1,7 +1,7 @@
 [project]
-name = "labs"
+name = "Crypto-Lab1"
 version = "0.1.0"
-description = "Add your description here"
+description = "Very cool uhhm yeah"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
