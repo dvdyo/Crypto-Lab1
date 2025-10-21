@@ -9,9 +9,8 @@ import math
 import sys
 import csv
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass
-from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
